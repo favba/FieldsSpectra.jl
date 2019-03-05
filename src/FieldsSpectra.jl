@@ -1,5 +1,5 @@
 module FieldsSpectra
-export compute_shells, compute_shells2D, calculate_u1u2_spectrum, calculate_vector_spectrum, calculate_scalar_spectrum
+export compute_shells, compute_shells2D, calculate_u1u2_spectrum, calculate_vector_spectrum, calculate_scalar_spectrum, squared_mean
 
 using FluidFields
 
@@ -201,6 +201,30 @@ function calculate_scalar_spectrum(u::ScalarField{T}) where {T}
     NZ = size(u,3)
     Ef = zeros(T,min(NX,NY÷2,NZ÷2))
     return calculate_scalar_spectrum!(Ef,u) 
+end
+
+function squared_mean(u::ScalarField{T}) where {T}
+    isrealspace(u) && fourier!(u)
+    KX = u.kx
+    KY = u.ky
+    KZ = u.kz
+    NX = size(u,1)
+    NY = size(u,2)
+    NZ = size(u,3)
+    # Initialize the shells to zeros
+    dV = KX[2]*KY[2]*KZ[2]
+    ee = zero(T)
+    @inbounds for l in 1:NZ
+        @inbounds for j in 1:NY
+            magsq = abs2(u[1,j,l])
+            ee += magsq
+            @simd for i in 2:NX
+                magsq = abs2(u[i,j,l])
+                ee += 2*magsq 
+            end
+        end
+    end
+    return ee
 end
 
 end # module
