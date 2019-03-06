@@ -1,5 +1,5 @@
 module FieldsSpectra
-export compute_shells, compute_shells2D, calculate_u1u2_spectrum, calculate_vector_spectrum, calculate_scalar_spectrum, squared_mean
+export compute_shells, compute_shells2D, calculate_u1u2_spectrum, calculate_vector_spectrum, calculate_scalar_spectrum, squared_mean, proj_mean
 
 using FluidFields
 
@@ -205,22 +205,29 @@ end
 
 function squared_mean(u::ScalarField{T}) where {T}
     isrealspace(u) && fourier!(u)
-    KX = u.kx
-    KY = u.ky
-    KZ = u.kz
-    NX = size(u,1)
-    NY = size(u,2)
-    NZ = size(u,3)
-    # Initialize the shells to zeros
-    dV = KX[2]*KY[2]*KZ[2]
     ee = zero(T)
-    @inbounds for l in 1:NZ
-        @inbounds for j in 1:NY
-            magsq = abs2(u[1,j,l])
-            ee += magsq
-            @simd for i in 2:NX
+    @inbounds for l in axes(u,3)
+        @inbounds for j in axes(u,2)
+            @simd for i in axes(u,1)
                 magsq = abs2(u[i,j,l])
-                ee += 2*magsq 
+                ee += (1 + (i>1))*magsq 
+            end
+        end
+    end
+    return ee
+end
+
+@inline proj(a::Complex,b::Complex) = muladd(a.re, b.re, a.im*b.im)
+
+function proj_mean(u::ScalarField{T},v::ScalarField{T2}) where {T,T2}
+    isrealspace(u) && fourier!(u)
+    isrealspace(v) && fourier!(v)
+    ee = zero(promote_type(T,T2))
+    @inbounds for l in axes(u,3)
+        @inbounds for j in axes(u,2)
+            @simd for i in axes(u,1)
+                magsq = proj(u[i,j,l],v[i,j,l])
+                ee += (1 + (i>1))*magsq 
             end
         end
     end
