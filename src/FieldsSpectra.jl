@@ -277,7 +277,7 @@ function power_spectrum(u::ScalarField{T},v::ScalarField=u) where {T}
     return power_spectrum!(Ef,u,v) 
 end
 
-function hpower_spectrum!(Ef::Vector{T},u::ScalarField{T},v::ScalarField{T}=u,p::Int=1) where {T}
+function hpower_spectrum!(Ef::Vector{T},u::ScalarField{T},v::ScalarField{T}=u,p::Integer=1) where {T}
     isrealspace(u) && fourier!(u)
     isrealspace(v) && fourier!(v)
     KX = u.kx
@@ -315,8 +315,7 @@ hpower_spectrum!(Ef::Vector{T},u::ScalarField{T},p::Integer) where {T} = hpower_
 function hpower_spectrum(u::ScalarField{T},v::ScalarField=u,p::Integer=1) where {T}
     NX = size(u,1)
     NY = size(u,2)
-    NZ = size(u,3)
-    Ef = zeros(T,min(NX,NY÷2,NZ÷2))
+    Ef = zeros(T,min(NX,NY÷2))
     return hpower_spectrum!(Ef,u,v,p) 
 end
 
