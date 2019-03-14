@@ -136,7 +136,6 @@ function calculate_vector_spectrum!(Ef,u::VectorField{T}) where {T}
             magsq = abs2(ux[1,j,l]) + abs2(uy[1,j,l]) + abs2(uz[1,j,l])
             ee = magsq
             Ef[n]+=ee
-            sumE_k +=  magsq
             fix = zero(T)
             for i in 2:NX
                 K = sqrt(muladd(KX[i],KX[i], KY2))
@@ -282,14 +281,12 @@ function hpower_spectrum!(Ef::Vector{T},u::ScalarField{T},v::ScalarField{T}=u,p:
     isrealspace(v) && fourier!(v)
     KX = u.kx
     KY = u.ky
-    KZ = u.kz
     NX = size(u,1)
     NY = size(u,2)
-    NZ = size(u,3)
     # Initialize the shells to zeros
     fill!(Ef,zero(T))
-    maxdk2d = max(KX[2],KY[2],KZ[2])
-    nshells = min(NX,NY÷2,NZ÷2)
+    maxdk2d = max(KX[2],KY[2])
+    nshells = min(NX,NY÷2)
 
     @inbounds for j in 1:NY
         KY2 = KY[j]^2
