@@ -1,10 +1,14 @@
 module FieldsSpectra
-export compute_shells, compute_shells2D, calculate_u1u2_spectrum, calculate_vector_spectrum, calculate_scalar_spectrum, squared_mean, proj_mean
+export compute_shells, compute_shells2D, squared_mean, proj_mean
+#export calculate_u1u2_spectrum, calculate_vector_spectrum, calculate_scalar_spectrum
 export power_spectrum, power_spectrum!, hpower_spectrum, hpower_spectrum!
 
-using FluidFields
+using FluidFields, FluidTensors
 
 @inline proj(a::Complex,b::Complex) = muladd(a.re, b.re, a.im*b.im)
+@inline proj(u::Vec{<:Complex},v::Vec{<:Complex}) = proj(u.x,v.x) + proj(u.y,v.y) + proj(u.z,v.z)
+@inline proj(a::SymTen{<:Complex},b::SymTen{<:Complex}) =
+    proj(a.xx,b.xx) + proj(a.yy,b.yy) + proj(a.zz,b.zz) + 2*(proj(a.xy,b.xy) + proj(a.xz,b.xz) + proj(a.yz,b.yz))
 
 function compute_shells(kx::AbstractVector{T},ky::AbstractVector,kz::AbstractVector) where {T}
     Nx = length(kx)
@@ -69,138 +73,138 @@ end
 
 compute_shells2D(f::AbstractField) = compute_shells2D(f.kx,f.ky)
 
-function calculate_u1u2_spectrum!(Ef,u::VectorField{T},cplane::Int=1) where {T}
-    isrealspace(u) && fourier!(u)
-    ux = u.c.x
-    uy = u.c.y
-    KX = u.kx
-    KY = u.ky
-    NX = size(u,1)
-    NY = size(u,2)
-    # Initialize the shells to zeros
-    fill!(Ef,zero(T))
-    maxdk2d = max(KX[2],KY[2])
-    nshells = min(NX,NY÷2)
-    @inbounds for j in 1:NY
-        KY2 = KY[j]^2
-        n = round(Int, sqrt(KY2)/maxdk2d) + 1
-        n > nshells && break
-        magsq = abs2(ux[1,j,cplane]) + abs2(uy[1,j,cplane])
-        ee = magsq
-        Ef[n]+=ee
-        for i in 2:NX
-            k = sqrt(muladd(KX[i],KX[i], KY2))
-            n = round(Int, k/maxdk2d) + 1
-            n > nshells && break
-            magsq = abs2(ux[i,j,cplane]) + abs2(uy[i,j,cplane])
-            ee = 2*magsq
-            Ef[n]+=ee
-        end
-    end
-    return Ef
-end
-
-function calculate_u1u2_spectrum(u::VectorField{T},p::Int=1) where {T}
-    NX = size(u,1)
-    NY = size(u,2)
-    Ef = zeros(T,min(NX,NY÷2))
-    return calculate_u1u2_spectrum!(Ef,u,p) 
-end
-
-function calculate_vector_spectrum!(Ef,u::VectorField{T}) where {T}
-    isrealspace(u) && fourier!(u)
-    ux = u.c.x
-    uy = u.c.y
-    uz = u.c.z
-    KX = u.kx
-    KY = u.ky
-    KZ = u.kz
-    NX = size(u,1)
-    NY = size(u,2)
-    NZ = size(u,3)
-    # Initialize the shells to zeros
-    fill!(Ef,zero(T))
-    maxdk2d = max(KX[2],KY[2],KZ[2])
-    vK = KX[2]*KY[2]*KZ[2]
-    nshells = min(NX,NY÷2,NZ÷2)
-
-    fix = oneunit(T)
-    @inbounds for l in 1:NZ
-        KZ2 = KZ[l]^2
-        (round(Int, sqrt(KZ2)/maxdk2d) + 1) > nshells && break
-        @inbounds for j in 1:NY
-            KY2 = KY[j]^2 + KZ2
-            K = sqrt(KY2)
-            n = round(Int, K/maxdk2d) + 1
-            n > nshells && break
-            magsq = abs2(ux[1,j,l]) + abs2(uy[1,j,l]) + abs2(uz[1,j,l])
-            ee = magsq
-            Ef[n]+=ee
-            fix = zero(T)
-            for i in 2:NX
-                K = sqrt(muladd(KX[i],KX[i], KY2))
-                n = round(Int, K/maxdk2d) + 1
-                n > nshells && break
-                magsq = abs2(ux[i,j,l]) + abs2(uy[i,j,l]) + abs2(uz[i,j,l])
-                ee = 2*magsq
-                Ef[n]+=ee
-            end
-        end
-    end
-    return Ef
-end
-
-function calculate_vector_spectrum(u::VectorField{T}) where {T}
-    NX = size(u,1)
-    NY = size(u,2)
-    NZ = size(u,3)
-    Ef = zeros(T,min(NX,NY÷2,NZ÷2))
-    return calculate_vector_spectrum!(Ef,u) 
-end
-
-function calculate_scalar_spectrum!(Ef,u::ScalarField{T}) where {T}
-    isrealspace(u) && fourier!(u)
-    KX = u.kx
-    KY = u.ky
-    KZ = u.kz
-    NX = size(u,1)
-    NY = size(u,2)
-    NZ = size(u,3)
-    # Initialize the shells to zeros
-    fill!(Ef,zero(T))
-    maxdk2d = max(KX[2],KY[2],KZ[2])
-    nshells = min(NX,NY÷2,NZ÷2)
-
-    @inbounds for l in 1:NZ
-        KZ2 = KZ[l]^2
-        (round(Int, sqrt(KZ2)/maxdk2d) + 1) > nshells && break
-        @inbounds for j in 1:NY
-            KY2 = KY[j]^2 + KZ2
-            n = round(Int, sqrt(KY2)/maxdk2d) + 1
-            n > nshells && break
-            magsq = abs2(u[1,j,l])
-            ee = magsq
-            Ef[n]+=ee
-            for i in 2:NX
-                k = sqrt(muladd(KX[i],KX[i], KY2))
-                n = round(Int, k/maxdk2d) + 1
-                n > nshells && break
-                magsq = abs2(u[i,j,l])
-                ee = 2*magsq
-                Ef[n]+=ee
-            end
-        end
-    end
-    return Ef
-end
-
-function calculate_scalar_spectrum(u::ScalarField{T}) where {T}
-    NX = size(u,1)
-    NY = size(u,2)
-    NZ = size(u,3)
-    Ef = zeros(T,min(NX,NY÷2,NZ÷2))
-    return calculate_scalar_spectrum!(Ef,u) 
-end
+#function calculate_u1u2_spectrum!(Ef,u::VectorField{T},cplane::Int=1) where {T}
+#    isrealspace(u) && fourier!(u)
+#    ux = u.c.x
+#    uy = u.c.y
+#    KX = u.kx
+#    KY = u.ky
+#    NX = size(u,1)
+#    NY = size(u,2)
+#    # Initialize the shells to zeros
+#    fill!(Ef,zero(T))
+#    maxdk2d = max(KX[2],KY[2])
+#    nshells = min(NX,NY÷2)
+#    @inbounds for j in 1:NY
+#        KY2 = KY[j]^2
+#        n = round(Int, sqrt(KY2)/maxdk2d) + 1
+#        n > nshells && break
+#        magsq = abs2(ux[1,j,cplane]) + abs2(uy[1,j,cplane])
+#        ee = magsq
+#        Ef[n]+=ee
+#        for i in 2:NX
+#            k = sqrt(muladd(KX[i],KX[i], KY2))
+#            n = round(Int, k/maxdk2d) + 1
+#            n > nshells && break
+#            magsq = abs2(ux[i,j,cplane]) + abs2(uy[i,j,cplane])
+#            ee = 2*magsq
+#            Ef[n]+=ee
+#        end
+#    end
+#    return Ef
+#end
+#
+#function calculate_u1u2_spectrum(u::VectorField{T},p::Int=1) where {T}
+#    NX = size(u,1)
+#    NY = size(u,2)
+#    Ef = zeros(T,min(NX,NY÷2))
+#    return calculate_u1u2_spectrum!(Ef,u,p) 
+#end
+#
+#function calculate_vector_spectrum!(Ef,u::VectorField{T}) where {T}
+#    isrealspace(u) && fourier!(u)
+#    ux = u.c.x
+#    uy = u.c.y
+#    uz = u.c.z
+#    KX = u.kx
+#    KY = u.ky
+#    KZ = u.kz
+#    NX = size(u,1)
+#    NY = size(u,2)
+#    NZ = size(u,3)
+#    # Initialize the shells to zeros
+#    fill!(Ef,zero(T))
+#    maxdk2d = max(KX[2],KY[2],KZ[2])
+#    vK = KX[2]*KY[2]*KZ[2]
+#    nshells = min(NX,NY÷2,NZ÷2)
+#
+#    fix = oneunit(T)
+#    @inbounds for l in 1:NZ
+#        KZ2 = KZ[l]^2
+#        (round(Int, sqrt(KZ2)/maxdk2d) + 1) > nshells && break
+#        @inbounds for j in 1:NY
+#            KY2 = KY[j]^2 + KZ2
+#            K = sqrt(KY2)
+#            n = round(Int, K/maxdk2d) + 1
+#            n > nshells && break
+#            magsq = abs2(ux[1,j,l]) + abs2(uy[1,j,l]) + abs2(uz[1,j,l])
+#            ee = magsq
+#            Ef[n]+=ee
+#            fix = zero(T)
+#            for i in 2:NX
+#                K = sqrt(muladd(KX[i],KX[i], KY2))
+#                n = round(Int, K/maxdk2d) + 1
+#                n > nshells && break
+#                magsq = abs2(ux[i,j,l]) + abs2(uy[i,j,l]) + abs2(uz[i,j,l])
+#                ee = 2*magsq
+#                Ef[n]+=ee
+#            end
+#        end
+#    end
+#    return Ef
+#end
+#
+#function calculate_vector_spectrum(u::VectorField{T}) where {T}
+#    NX = size(u,1)
+#    NY = size(u,2)
+#    NZ = size(u,3)
+#    Ef = zeros(T,min(NX,NY÷2,NZ÷2))
+#    return calculate_vector_spectrum!(Ef,u) 
+#end
+#
+#function calculate_scalar_spectrum!(Ef,u::ScalarField{T}) where {T}
+#    isrealspace(u) && fourier!(u)
+#    KX = u.kx
+#    KY = u.ky
+#    KZ = u.kz
+#    NX = size(u,1)
+#    NY = size(u,2)
+#    NZ = size(u,3)
+#    # Initialize the shells to zeros
+#    fill!(Ef,zero(T))
+#    maxdk2d = max(KX[2],KY[2],KZ[2])
+#    nshells = min(NX,NY÷2,NZ÷2)
+#
+#    @inbounds for l in 1:NZ
+#        KZ2 = KZ[l]^2
+#        (round(Int, sqrt(KZ2)/maxdk2d) + 1) > nshells && break
+#        @inbounds for j in 1:NY
+#            KY2 = KY[j]^2 + KZ2
+#            n = round(Int, sqrt(KY2)/maxdk2d) + 1
+#            n > nshells && break
+#            magsq = abs2(u[1,j,l])
+#            ee = magsq
+#            Ef[n]+=ee
+#            for i in 2:NX
+#                k = sqrt(muladd(KX[i],KX[i], KY2))
+#                n = round(Int, k/maxdk2d) + 1
+#                n > nshells && break
+#                magsq = abs2(u[i,j,l])
+#                ee = 2*magsq
+#                Ef[n]+=ee
+#            end
+#        end
+#    end
+#    return Ef
+#end
+#
+#function calculate_scalar_spectrum(u::ScalarField{T}) where {T}
+#    NX = size(u,1)
+#    NY = size(u,2)
+#    NZ = size(u,3)
+#    Ef = zeros(T,min(NX,NY÷2,NZ÷2))
+#    return calculate_scalar_spectrum!(Ef,u) 
+#end
 
 function squared_mean(u::ScalarField{T}) where {T}
     isrealspace(u) && fourier!(u)
@@ -216,7 +220,7 @@ function squared_mean(u::ScalarField{T}) where {T}
     return ee
 end
 
-function proj_mean(u::ScalarField{T},v::ScalarField{T2}) where {T,T2}
+function proj_mean(u::AbstractField{T},v::AbstractField{T2}) where {T,T2}
     isrealspace(u) && fourier!(u)
     isrealspace(v) && fourier!(v)
     ee = zero(promote_type(T,T2))
@@ -231,7 +235,7 @@ function proj_mean(u::ScalarField{T},v::ScalarField{T2}) where {T,T2}
     return ee
 end
 
-function power_spectrum!(Ef::Vector{T},u::ScalarField{T},v::ScalarField{T}=u) where {T}
+function power_spectrum!(Ef::Vector{T},u::AbstractField,v::AbstractField=u) where {T}
     isrealspace(u) && fourier!(u)
     isrealspace(v) && fourier!(v)
     KX = u.kx
@@ -268,7 +272,7 @@ function power_spectrum!(Ef::Vector{T},u::ScalarField{T},v::ScalarField{T}=u) wh
     return Ef
 end
 
-function power_spectrum(u::ScalarField{T},v::ScalarField=u) where {T}
+function power_spectrum(u::AbstractField{T},v::AbstractField=u) where {T}
     NX = size(u,1)
     NY = size(u,2)
     NZ = size(u,3)
@@ -276,7 +280,7 @@ function power_spectrum(u::ScalarField{T},v::ScalarField=u) where {T}
     return power_spectrum!(Ef,u,v) 
 end
 
-function hpower_spectrum!(Ef::Vector{T},u::ScalarField{T},v::ScalarField{T}=u,p::Integer=1) where {T}
+function hpower_spectrum!(Ef::Vector{T},u::AbstractField,v::AbstractField=u,p::Integer=1) where {T}
     isrealspace(u) && fourier!(u)
     isrealspace(v) && fourier!(v)
     KX = u.kx
@@ -307,15 +311,15 @@ function hpower_spectrum!(Ef::Vector{T},u::ScalarField{T},v::ScalarField{T}=u,p:
     return Ef
 end
 
-hpower_spectrum!(Ef::Vector{T},u::ScalarField{T},p::Integer) where {T} = hpower_spectrum!(Ef,u,u,p)
+hpower_spectrum!(Ef::Vector{T},u::AbstractField,p::Integer) where {T} = hpower_spectrum!(Ef,u,u,p)
 
-function hpower_spectrum(u::ScalarField{T},v::ScalarField=u,p::Integer=1) where {T}
+function hpower_spectrum(u::AbstractField{T},v::AbstractField=u,p::Integer=1) where {T}
     NX = size(u,1)
     NY = size(u,2)
     Ef = zeros(T,min(NX,NY÷2))
     return hpower_spectrum!(Ef,u,v,p) 
 end
 
-hpower_spectrum(u::ScalarField,p::Integer) = hpower_spectrum(u,u,p)
+hpower_spectrum(u::AbstractField,p::Integer) = hpower_spectrum(u,u,p)
 
 end # module
