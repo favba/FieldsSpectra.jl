@@ -10,25 +10,34 @@ using FluidFields, FluidTensors
 @inline proj(a::SymTen{<:Complex},b::SymTen{<:Complex}) =
     proj(a.xx,b.xx) + proj(a.yy,b.yy) + proj(a.zz,b.zz) + 2*(proj(a.xy,b.xy) + proj(a.xz,b.xz) + proj(a.yz,b.yz))
 
+
+function nshells(kx,ky,kz)
+    maxdk = max(kx[2],ky[2],kz[2])
+    n = round(Int,sqrt(kx[end]^2 + maximum(x->x*x,ky) + maximum(x->x*x,kz))/maxdk) + 1
+    return n, maxdk
+end
+
+function nshells2D(kx,ky)
+    maxdk = max(kx[2],ky[2])
+    n = round(Int,sqrt(kx[end]^2 + maximum(x->x*x,ky))/maxdk) + 1
+    return n, maxdk
+end
+
 function compute_shells(kx::AbstractVector{T},ky::AbstractVector,kz::AbstractVector) where {T}
     Nx = length(kx)
     Ny = length(ky)
     Nz = length(kz)
-    nShells = min(Nx,Ny÷2,Nz÷2)
-    maxdk = max(kx[2],ky[2],kz[2])
+    nShells, maxdk = nshells(kx,ky,kz)
     kh = zeros(T,nShells)
     numPtsInShell = zeros(Int,nShells)
 
     @inbounds for k in 1:Nz
         kz2 = kz[k]^2
-        (round(Int,sqrt(kz2)/maxdk)+1) > nShells && break
         for j=1:Ny
             kzy2 = kz2 + ky[j]^2
-            (round(Int,sqrt(kzy2)/maxdk)+1) > nShells && break
             for i=1:Nx
                 K = sqrt(muladd(kx[i],kx[i],kzy2))
                 ii = round(Int,K/maxdk)+1
-                ii > nShells && break
                 kh[ii] += K
                 numPtsInShell[ii] += 1
             end
@@ -47,18 +56,15 @@ compute_shells(f::AbstractField) = compute_shells(f.kx,f.ky,f.kz)
 function compute_shells2D(kx::AbstractVector{T},ky) where {T}
     Nx = length(kx)
     Ny = length(ky)
-    nShells2D = min(Nx,Ny÷2)
-    maxdk2D = max(kx[2],ky[2])
+    nShells2D, maxdk2D = nshells2D(kx,ky)
     kh = zeros(T,nShells2D)
     numPtsInShell2D = zeros(Int,nShells2D)
 
     @inbounds for j=1:Ny
         ky2 = ky[j]^2
-        (round(Int,sqrt(ky2)/maxdk2D)+1) > nShells2D && break
         for i=1:Nx
             K = sqrt(muladd(kx[i],kx[i], ky2))
             ii = round(Int,K/maxdk2D)+1
-            ii > nShells2D && break
             kh[ii] += K
             numPtsInShell2D[ii] += 1
         end
@@ -210,12 +216,16 @@ function squared_mean(u::ScalarField{T}) where {T}
     isrealspace(u) && fourier!(u)
     ee = zero(T)
     @inbounds for l in axes(u,3)
+        ep = zero(T)
         @inbounds for j in axes(u,2)
+            ex = zero(T)
             @simd for i in axes(u,1)
                 magsq = abs2(u[i,j,l])
-                ee += (1 + (i>1))*magsq 
+                ex += (1 + (i>1))*magsq 
             end
+            ep += ex
         end
+        ee += ep
     end
     return ee
 end
@@ -225,12 +235,16 @@ function proj_mean(u::AbstractField{T},v::AbstractField{T2}) where {T,T2}
     isrealspace(v) && fourier!(v)
     ee = zero(promote_type(T,T2))
     @inbounds for l in axes(u,3)
+        ep = zero(T)
         @inbounds for j in axes(u,2)
+            ex = zero(T)
             @simd for i in axes(u,1)
                 magsq = proj(u[i,j,l],v[i,j,l])
-                ee += (1 + (i>1))*magsq 
+                ex += (1 + (i>1))*magsq 
             end
+            ep += ex
         end
+        ee += ep
     end
     return ee
 end
@@ -247,22 +261,20 @@ function power_spectrum!(Ef::Vector{T},u::AbstractField,v::AbstractField=u) wher
     # Initialize the shells to zeros
     fill!(Ef,zero(T))
     maxdk2d = max(KX[2],KY[2],KZ[2])
-    nshells = min(NX,NY÷2,NZ÷2)
+    #nshells = min(NX,NY÷2,NZ÷2)
+    nshells = length(Ef)
 
     @inbounds for l in 1:NZ
         KZ2 = KZ[l]^2
-        (round(Int, sqrt(KZ2)/maxdk2d) + 1) > nshells && break
         @inbounds for j in 1:NY
             KY2 = KY[j]^2 + KZ2
             n = round(Int, sqrt(KY2)/maxdk2d) + 1
-            n > nshells && break
             magsq = proj(u[1,j,l],v[1,j,l])
             ee = magsq
             Ef[n]+=ee
             for i in 2:NX
                 k = sqrt(muladd(KX[i],KX[i], KY2))
                 n = round(Int, k/maxdk2d) + 1
-                n > nshells && break
                 magsq = proj(u[i,j,l],v[i,j,l])
                 ee = 2*magsq
                 Ef[n]+=ee
@@ -273,10 +285,8 @@ function power_spectrum!(Ef::Vector{T},u::AbstractField,v::AbstractField=u) wher
 end
 
 function power_spectrum(u::AbstractField{T},v::AbstractField=u) where {T}
-    NX = size(u,1)
-    NY = size(u,2)
-    NZ = size(u,3)
-    Ef = zeros(T,min(NX,NY÷2,NZ÷2))
+    n,_ = nshells(u.kx,u.ky,u.kz)
+    Ef = zeros(T,n)
     return power_spectrum!(Ef,u,v) 
 end
 
@@ -290,19 +300,17 @@ function hpower_spectrum!(Ef::Vector{T},u::AbstractField,v::AbstractField=u,p::I
     # Initialize the shells to zeros
     fill!(Ef,zero(T))
     maxdk2d = max(KX[2],KY[2])
-    nshells = min(NX,NY÷2)
+    nshells = length(Ef)
 
     @inbounds for j in 1:NY
         KY2 = KY[j]^2
         n = round(Int, sqrt(KY2)/maxdk2d) + 1
-        n > nshells && break
         magsq = proj(u[1,j,p],v[1,j,p])
         ee = magsq
         Ef[n]+=ee
         for i in 2:NX
             k = sqrt(muladd(KX[i],KX[i], KY2))
             n = round(Int, k/maxdk2d) + 1
-            n > nshells && break
             magsq = proj(u[i,j,p],v[i,j,p])
             ee = 2*magsq
             Ef[n]+=ee
@@ -314,9 +322,8 @@ end
 hpower_spectrum!(Ef::Vector{T},u::AbstractField,p::Integer) where {T} = hpower_spectrum!(Ef,u,u,p)
 
 function hpower_spectrum(u::AbstractField{T},v::AbstractField=u,p::Integer=1) where {T}
-    NX = size(u,1)
-    NY = size(u,2)
-    Ef = zeros(T,min(NX,NY÷2))
+    n,_ = nshells2D(u.kx,u.ky)
+    Ef = zeros(T,n)
     return hpower_spectrum!(Ef,u,v,p) 
 end
 
