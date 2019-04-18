@@ -1,7 +1,7 @@
 module FieldsSpectra
 export compute_shells, compute_shells2D, squared_mean, proj_mean
 #export calculate_u1u2_spectrum, calculate_vector_spectrum, calculate_scalar_spectrum
-export power_spectrum, power_spectrum!, hpower_spectrum, hpower_spectrum!
+export power_spectrum, power_spectrum!, hpower_spectrum, hpower_spectrum!, spectrum3D, spectrum3D!
 
 using FluidFields, FluidTensors
 
@@ -328,5 +328,32 @@ function hpower_spectrum(u::AbstractField{T},v::AbstractField=u,p::Integer=1) wh
 end
 
 hpower_spectrum(u::AbstractField,p::Integer) = hpower_spectrum(u,u,p)
+
+function spectrum3D!(Ef::AbstractArray{T,3},u::AbstractField,v::AbstractField=u) where {T}
+    isrealspace(u) && fourier!(u)
+    isrealspace(v) && fourier!(v)
+    NX = size(u,1)
+    NY = size(u,2)
+    NZ = size(u,3)
+
+    @inbounds for l in 1:NZ
+        @inbounds for j in 1:NY
+            magsq = proj(u[1,j,l],v[1,j,l])
+            ee = magsq
+            Ef[1,j,l]=ee
+            for i in 2:NX
+                magsq = proj(u[i,j,l],v[i,j,l])
+                ee = 2*magsq
+                Ef[i,j,l]=ee
+            end
+        end
+    end
+    return Ef
+end
+
+function spectrum3D(u::AbstractField{T},v::AbstractField=u) where {T}
+    Ef = zeros(T,size(u))
+    return spectrum3D!(Ef,u,v) 
+end
 
 end # module
