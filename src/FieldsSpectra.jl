@@ -2,6 +2,7 @@ module FieldsSpectra
 export compute_shells, compute_shells2D, squared_mean, proj_mean
 #export calculate_u1u2_spectrum, calculate_vector_spectrum, calculate_scalar_spectrum
 export power_spectrum, power_spectrum!, hpower_spectrum, hpower_spectrum!, spectrum3D, spectrum3D!
+export hvproj_mean
 
 using FluidFields, FluidTensors
 
@@ -10,6 +11,29 @@ using FluidFields, FluidTensors
 @inline proj(a::SymTen{<:Complex},b::SymTen{<:Complex}) =
     proj(a.xx,b.xx) + proj(a.yy,b.yy) + proj(a.zz,b.zz) + 2*(proj(a.xy,b.xy) + proj(a.xz,b.xz) + proj(a.yz,b.yz))
 
+@inline vecouterproj(a::Vec{<:Complex},b::Vec{<:Complex}) = Vec(proj(a.x,b.x),
+                                                                proj(a.y,b.y),
+                                                                proj(a.z,b.z))
+
+@inline vecouterproj(a::Ten{<:Complex},b::Ten{<:Complex}) = Vec(proj(a.xx,b.xx) + proj(a.xy,b.yx) + proj(a.xz,b.zx),
+                                                                proj(a.yx,b.xy) + proj(a.yy,b.yy) + proj(a.yz,b.zy),
+                                                                proj(a.zx,b.xz) + proj(a.zy,b.yz) + proj(a.zz,b.zz))
+
+@inline vecouterproj(a::SymTen{<:Complex},b::Ten{<:Complex}) = Vec(proj(a.xx,b.xx) + proj(a.xy,b.yx) + proj(a.xz,b.zx),
+                                                                   proj(a.xy,b.xy) + proj(a.yy,b.yy) + proj(a.yz,b.zy),
+                                                                   proj(a.xz,b.xz) + proj(a.yz,b.yz) + proj(a.zz,b.zz))
+
+@inline vecouterproj(a::Ten{<:Complex},b::SymTen{<:Complex}) = Vec(proj(a.xx,b.xx) + proj(a.xy,b.xy) + proj(a.xz,b.xz),
+                                                                   proj(a.yx,b.xy) + proj(a.yy,b.yy) + proj(a.yz,b.yz),
+                                                                   proj(a.zx,b.xz) + proj(a.zy,b.yz) + proj(a.zz,b.zz))
+
+@inline vecouterproj(a::SymTen{<:Complex},b::SymTen{<:Complex}) = Vec(proj(a.xx,b.xx) + proj(a.xy,b.xy) + proj(a.xz,b.xz),
+                                                                      proj(a.xy,b.xy) + proj(a.yy,b.yy) + proj(a.yz,b.yz),
+                                                                      proj(a.xz,b.xz) + proj(a.yz,b.yz) + proj(a.zz,b.zz))
+
+@inline vecouterproj(a::SymTen{<:Complex},b::AntiSymTen{<:Complex}) = Vec(proj(a.xy,-b.xy) + proj(a.xz,-b.xz),
+                                                                          proj(a.xy,b.xy) + proj(a.yz,-b.yz),
+                                                                          proj(a.xz,b.xz) + proj(a.yz,b.yz))
 
 function nshells(kx,ky,kz)
     maxdk = max(kx[2],ky[2],kz[2])
@@ -79,139 +103,6 @@ end
 
 compute_shells2D(f::AbstractField) = compute_shells2D(f.kx,f.ky)
 
-#function calculate_u1u2_spectrum!(Ef,u::VectorField{T},cplane::Int=1) where {T}
-#    isrealspace(u) && fourier!(u)
-#    ux = u.c.x
-#    uy = u.c.y
-#    KX = u.kx
-#    KY = u.ky
-#    NX = size(u,1)
-#    NY = size(u,2)
-#    # Initialize the shells to zeros
-#    fill!(Ef,zero(T))
-#    maxdk2d = max(KX[2],KY[2])
-#    nshells = min(NX,NY÷2)
-#    @inbounds for j in 1:NY
-#        KY2 = KY[j]^2
-#        n = round(Int, sqrt(KY2)/maxdk2d) + 1
-#        n > nshells && break
-#        magsq = abs2(ux[1,j,cplane]) + abs2(uy[1,j,cplane])
-#        ee = magsq
-#        Ef[n]+=ee
-#        for i in 2:NX
-#            k = sqrt(muladd(KX[i],KX[i], KY2))
-#            n = round(Int, k/maxdk2d) + 1
-#            n > nshells && break
-#            magsq = abs2(ux[i,j,cplane]) + abs2(uy[i,j,cplane])
-#            ee = 2*magsq
-#            Ef[n]+=ee
-#        end
-#    end
-#    return Ef
-#end
-#
-#function calculate_u1u2_spectrum(u::VectorField{T},p::Int=1) where {T}
-#    NX = size(u,1)
-#    NY = size(u,2)
-#    Ef = zeros(T,min(NX,NY÷2))
-#    return calculate_u1u2_spectrum!(Ef,u,p) 
-#end
-#
-#function calculate_vector_spectrum!(Ef,u::VectorField{T}) where {T}
-#    isrealspace(u) && fourier!(u)
-#    ux = u.c.x
-#    uy = u.c.y
-#    uz = u.c.z
-#    KX = u.kx
-#    KY = u.ky
-#    KZ = u.kz
-#    NX = size(u,1)
-#    NY = size(u,2)
-#    NZ = size(u,3)
-#    # Initialize the shells to zeros
-#    fill!(Ef,zero(T))
-#    maxdk2d = max(KX[2],KY[2],KZ[2])
-#    vK = KX[2]*KY[2]*KZ[2]
-#    nshells = min(NX,NY÷2,NZ÷2)
-#
-#    fix = oneunit(T)
-#    @inbounds for l in 1:NZ
-#        KZ2 = KZ[l]^2
-#        (round(Int, sqrt(KZ2)/maxdk2d) + 1) > nshells && break
-#        @inbounds for j in 1:NY
-#            KY2 = KY[j]^2 + KZ2
-#            K = sqrt(KY2)
-#            n = round(Int, K/maxdk2d) + 1
-#            n > nshells && break
-#            magsq = abs2(ux[1,j,l]) + abs2(uy[1,j,l]) + abs2(uz[1,j,l])
-#            ee = magsq
-#            Ef[n]+=ee
-#            fix = zero(T)
-#            for i in 2:NX
-#                K = sqrt(muladd(KX[i],KX[i], KY2))
-#                n = round(Int, K/maxdk2d) + 1
-#                n > nshells && break
-#                magsq = abs2(ux[i,j,l]) + abs2(uy[i,j,l]) + abs2(uz[i,j,l])
-#                ee = 2*magsq
-#                Ef[n]+=ee
-#            end
-#        end
-#    end
-#    return Ef
-#end
-#
-#function calculate_vector_spectrum(u::VectorField{T}) where {T}
-#    NX = size(u,1)
-#    NY = size(u,2)
-#    NZ = size(u,3)
-#    Ef = zeros(T,min(NX,NY÷2,NZ÷2))
-#    return calculate_vector_spectrum!(Ef,u) 
-#end
-#
-#function calculate_scalar_spectrum!(Ef,u::ScalarField{T}) where {T}
-#    isrealspace(u) && fourier!(u)
-#    KX = u.kx
-#    KY = u.ky
-#    KZ = u.kz
-#    NX = size(u,1)
-#    NY = size(u,2)
-#    NZ = size(u,3)
-#    # Initialize the shells to zeros
-#    fill!(Ef,zero(T))
-#    maxdk2d = max(KX[2],KY[2],KZ[2])
-#    nshells = min(NX,NY÷2,NZ÷2)
-#
-#    @inbounds for l in 1:NZ
-#        KZ2 = KZ[l]^2
-#        (round(Int, sqrt(KZ2)/maxdk2d) + 1) > nshells && break
-#        @inbounds for j in 1:NY
-#            KY2 = KY[j]^2 + KZ2
-#            n = round(Int, sqrt(KY2)/maxdk2d) + 1
-#            n > nshells && break
-#            magsq = abs2(u[1,j,l])
-#            ee = magsq
-#            Ef[n]+=ee
-#            for i in 2:NX
-#                k = sqrt(muladd(KX[i],KX[i], KY2))
-#                n = round(Int, k/maxdk2d) + 1
-#                n > nshells && break
-#                magsq = abs2(u[i,j,l])
-#                ee = 2*magsq
-#                Ef[n]+=ee
-#            end
-#        end
-#    end
-#    return Ef
-#end
-#
-#function calculate_scalar_spectrum(u::ScalarField{T}) where {T}
-#    NX = size(u,1)
-#    NY = size(u,2)
-#    NZ = size(u,3)
-#    Ef = zeros(T,min(NX,NY÷2,NZ÷2))
-#    return calculate_scalar_spectrum!(Ef,u) 
-#end
-
 function squared_mean(u::ScalarField{T}) where {T}
     isrealspace(u) && fourier!(u)
     ee = zero(T)
@@ -230,7 +121,7 @@ function squared_mean(u::ScalarField{T}) where {T}
     return ee
 end
 
-function proj_mean(u::AbstractField{T},v::AbstractField{T2}) where {T,T2}
+function proj_mean(u::AbstractField{T},v::AbstractField{T2}=u) where {T,T2}
     isrealspace(u) && fourier!(u)
     isrealspace(v) && fourier!(v)
     ee = zero(promote_type(T,T2))
@@ -247,6 +138,31 @@ function proj_mean(u::AbstractField{T},v::AbstractField{T2}) where {T,T2}
         ee += ep
     end
     return ee
+end
+
+function hvproj_mean(u::AbstractField{T},v::AbstractField{T2}=u) where {T,T2}
+    isrealspace(u) && fourier!(u)
+    isrealspace(v) && fourier!(v)
+    eeh = zero(promote_type(T,T2))
+    eev = zero(promote_type(T,T2))
+    @inbounds for l in axes(u,3)
+        eph = zero(T)
+        epv = zero(T)
+        @inbounds for j in axes(u,2)
+            exh = zero(T)
+            exv = zero(T)
+            @simd for i in axes(u,1)
+                magsq = vecouterproj(u[i,j,l],v[i,j,l])
+                exv += (1 + (i>1))*magsq.z
+                exh += (1 + (i>1))*(magsq.x + magsq.y)
+            end
+            eph += exh
+            epv += exv
+        end
+        eeh += eph
+        eev += epv
+    end
+    return eeh,eev
 end
 
 function power_spectrum!(Ef::Vector{T},u::AbstractField,v::AbstractField=u) where {T}
@@ -338,13 +254,8 @@ function spectrum3D!(Ef::AbstractArray{T,3},u::AbstractField,v::AbstractField=u)
 
     @inbounds for l in 1:NZ
         @inbounds for j in 1:NY
-            magsq = proj(u[1,j,l],v[1,j,l])
-            ee = magsq
-            Ef[1,j,l]=ee
-            for i in 2:NX
-                magsq = proj(u[i,j,l],v[i,j,l])
-                ee = 2*magsq
-                Ef[i,j,l]=ee
+            for i in 1:NX
+                Ef[i,j,l] = proj(u[i,j,l],v[i,j,l])
             end
         end
     end
