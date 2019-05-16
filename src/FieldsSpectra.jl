@@ -2,7 +2,7 @@ module FieldsSpectra
 export compute_shells, compute_shells2D, squared_mean, proj_mean
 #export calculate_u1u2_spectrum, calculate_vector_spectrum, calculate_scalar_spectrum
 export power_spectrum, power_spectrum!, hpower_spectrum, hpower_spectrum!, spectrum3D, spectrum3D!
-export hvproj_mean
+export hvproj_mean, dx_squared_mean, dy_squared_mean, dz_squared_mean
 
 using FluidFields, FluidTensors
 
@@ -117,6 +117,53 @@ function squared_mean(u::ScalarField{T}) where {T}
             ep += ex
         end
         ee += ep
+    end
+    return ee
+end
+
+function dx_squared_mean(u::ScalarField{T}) where {T}
+    isrealspace(u) && fourier!(u)
+    KX = u.kx
+    ee = zero(T)
+    @inbounds for l in axes(u,3)
+        @inbounds for j in axes(u,2)
+            @simd for i in axes(u,1)
+                magsq = abs2(im*KX[i]*u[i,j,l])
+                ee += (1 + (i>1))*magsq 
+            end
+        end
+    end
+    return ee
+end
+
+function dy_squared_mean(u::ScalarField{T}) where {T}
+    isrealspace(u) && fourier!(u)
+    KY = u.ky
+    ee = zero(T)
+    @inbounds for l in axes(u,3)
+        @inbounds for j in axes(u,2)
+            ky = KY[j]
+            @simd for i in axes(u,1)
+                magsq = abs2(im*ky*u[i,j,l])
+                ee += (1 + (i>1))*magsq 
+            end
+        end
+    end
+    return ee
+end
+
+function dz_squared_mean(u::ScalarField{T}) where {T}
+    isrealspace(u) && fourier!(u)
+    KZ = u.kz
+    ee = zero(T)
+    @inbounds for l in axes(u,3)
+        kz = KZ[l]
+        @inbounds for j in axes(u,2)
+            @simd for i in axes(u,1)
+                magsq = abs2(im*kz*u[i,j,l])
+                ee += (1 + (i>1))*magsq 
+            end
+        end
     end
     return ee
 end
